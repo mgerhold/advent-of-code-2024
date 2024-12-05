@@ -68,10 +68,10 @@ fun comparePages(
     pagesThatComeAfter: Ordering,
     pagesThatComeBefore: Ordering
 ): Int {
-    if (lhs in pagesThatComeAfter && pagesThatComeAfter[lhs]?.contains(rhs) == true) {
+    if (pagesThatComeAfter[lhs]?.contains(rhs) == true) {
         return -1
     }
-    if (lhs in pagesThatComeBefore && pagesThatComeBefore[lhs]?.contains(rhs) == true) {
+    if (pagesThatComeBefore[lhs]?.contains(rhs) == true) {
         return 1
     }
     return 0
