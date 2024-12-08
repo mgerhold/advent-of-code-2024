@@ -101,7 +101,7 @@ fun getAntinodesPart2(antennaPositions: Pair<Vec2, Vec2>): Pair<Sequence<Vec2>, 
 fun main() {
     val tileMap = Path("input.txt")
         .readLines()
-        .let { TileMap.fromLines(it) }
+        .let(TileMap::fromLines)
 
     val antennasByFrequency: Map<Char, List<Vec2>> = tileMap
         .filter { (_, tile) -> tile is Tile.Antenna }
