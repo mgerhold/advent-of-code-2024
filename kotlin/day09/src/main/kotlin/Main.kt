@@ -89,7 +89,7 @@ fun part2(blocks: MutableList<DiskBlock>): ULong {
         val fileLength = blocks[fileIndex].length
 
         val gapIndex = blocks
-            .take(fileIndex + 1)
+            .take(fileIndex)
             .withIndex()
             .firstOrNull { (_, block) -> block is DiskBlock.Empty && block.length >= fileLength }
             ?.index
