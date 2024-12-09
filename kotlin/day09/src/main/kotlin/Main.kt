@@ -133,9 +133,5 @@ fun main() {
         .second
 
     println(part1(blocks.toMutableList()))
-    println(
-        measureTime {
-            println(part2(blocks.toMutableList()))
-        }
-    )
+    println(part2(blocks.toMutableList()))
 }
