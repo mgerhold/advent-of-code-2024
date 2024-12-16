@@ -49,7 +49,7 @@ enum class Direction(val vector: Vec2, val char: Char) {
     }
 }
 
-data class DijkstraData(val predecessor: Node?, val cost: ULong)
+data class DijkstraData(val predecessors: MutableSet<Node>, val cost: ULong)
 
 data class Node(val position: Vec2, val direction: Direction)
 
@@ -119,38 +119,36 @@ fun findTileByType(tileType: TileType, grid: List<List<TileType>>) = grid
 
 data class Visitable(var node: Node, val cost: ULong, var origin: Node)
 
-fun dijkstra(graph: Map<Node, Set<Edge>>, from: Node, to: Vec2): List<Node> {
+fun dijkstra(graph: Map<Node, Set<Edge>>, from: Node, to: Vec2): Set<Node> {
     val visited = mutableSetOf(from)
     val toVisit = PriorityQueue<Visitable>(compareBy { it.cost })
     val dijkstraData = mutableMapOf<Node, DijkstraData>()
 
     graph[from]!!.forEach {
         toVisit.add(Visitable(it.target, it.cost, from))
-        dijkstraData[it.target] = DijkstraData(from, it.cost)
+        dijkstraData[it.target] = DijkstraData(mutableSetOf(from), it.cost)
     }
 
     while (toVisit.isNotEmpty()) {
         val (node, cost, predecessor) = toVisit.poll()
 
         if (node == from) {
-            println("Discarding $node since it's the start.")
             continue
         }
 
-        if (node in visited && cost >= dijkstraData[node]!!.cost) {
-            println("Discarding $node because of too high costs.")
+        if (node in visited) {
+            if (cost > dijkstraData[node]!!.cost) {
+                continue
+            }
+            dijkstraData[node]!!.predecessors.add(predecessor)
             continue
         }
 
-        println("Exploring $node")
-        if (node.position == to) {
-            println("This is the target node.")
-        }
         visited.add(node)
-        dijkstraData[node] = DijkstraData(predecessor, cost)
+        dijkstraData[node] = DijkstraData(mutableSetOf(predecessor), cost)
 
         graph[node]!!
-            .filter { it.target != dijkstraData[node]!!.predecessor }
+            .filter { it.target !in dijkstraData[node]!!.predecessors }
             .forEach {
                 toVisit.add(Visitable(it.target, cost + it.cost, node))
             }
@@ -161,28 +159,35 @@ fun dijkstra(graph: Map<Node, Set<Edge>>, from: Node, to: Vec2): List<Node> {
         .map { Node(to, it) }
         .minByOrNull { dijkstraData[it]!!.cost }!!
 
-    val route = mutableListOf(endNode)
-    var current = endNode
-    while (current != from) {
-        current = dijkstraData[current]!!.predecessor!!
-        route.add(current)
-    }
-    route.reverse()
+    val routeNodes = mutableSetOf<Node>()
+    reconstructPaths(endNode, dijkstraData, routeNodes)
 
-    println("Cost: ${dijkstraData[route.last()]!!.cost}")
+    println("Cost: ${dijkstraData[endNode]!!.cost}")
 
-    return route
+    return routeNodes
 }
 
-fun visualize(grid: List<List<TileType>>, route: List<Node>) {
+fun reconstructPaths(
+    end: Node,
+    dijkstraData: Map<Node, DijkstraData>,
+    pathNodes: MutableSet<Node>,
+) {
+    pathNodes.add(end)
+
+    dijkstraData[end]
+        ?.predecessors
+        ?.forEach { reconstructPaths(it, dijkstraData, pathNodes) }
+}
+
+fun visualize(grid: List<List<TileType>>, pathNodes: Set<Node>) {
     grid
         .forEachIndexed { rowIndex, row ->
             row.forEachIndexed { columnIndex, tileType ->
                 val position = Vec2(columnIndex, rowIndex)
-                val section = route
+                val section = pathNodes
                     .find { it.position == position }
                 if (section != null) {
-                    print(section.direction.char)
+                    print('O')
                 } else {
                     print(tileType.char)
                 }
@@ -200,7 +205,14 @@ fun main() {
 
     val graph = generateGraph(grid)
 
-    val route = dijkstra(graph, Node(start, Direction.RIGHT), end)
+    val pathNodes = dijkstra(graph, Node(start, Direction.RIGHT), end)
 
-//    visualize(grid, route)
+    val numNiceSpots = pathNodes
+        .map { it.position }
+        .toSet()
+        .size
+
+//    visualize(grid, pathNodes)
+
+    println("There are $numNiceSpots nice spots to sit.")
 }
