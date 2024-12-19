@@ -5,9 +5,9 @@ import kotlin.io.path.readText
 
 typealias Node = ULong
 
-data class Transition(val color: Color, val sourcePattern: String?)
+//data class Transition(val color: Color, val sourcePattern: String?)
 
-data class Edge(val from: Node, val transitions: Set<Transition>, var to: Node)
+data class Edge(val from: Node, val colors: Set<Color>, var to: Node)
 
 data class Graph(val edges: Set<Edge>)
 
@@ -17,36 +17,30 @@ fun validateDesign(
     graph: Graph,
     startNode: Node,
     design: Design,
-    seenPatterns: List<String?>,
-): List<List<String?>> {
+): Int {
     if (design.length == 1) {
         if (startNode == 0UL) {
-            return listOf(seenPatterns)
+            return 1
         }
-        return listOf()
+        return 0
     }
 
     val nextEdges = graph
         .edges
         .filter { edge -> edge.from == startNode }
-        .filter { edge -> design[1] in edge.transitions.map { it.color } }
+        .filter { edge -> design[1] in edge.colors }
 
     if (nextEdges.isEmpty()) {
-        return listOf()
+        return 0
     }
 
-    val subResults = mutableListOf<List<String?>>()
+    var sum = 0
     val nextDesign = design.substring(1)
     for (nextEdge in nextEdges) {
-        val pattern = nextEdge.transitions.find { it.color == nextDesign.first() }!!.sourcePattern
-        val newPatterns = seenPatterns + listOf(pattern)
-        val subResult = validateDesign(graph, nextEdge.to, nextDesign, newPatterns)
-        for (list in subResult.filter { it.isNotEmpty() }) {
-            subResults.add(list)
-        }
+        sum += validateDesign(graph, nextEdge.to, nextDesign)
     }
 
-    return subResults
+    return sum
 }
 
 typealias Color = Char
@@ -72,7 +66,7 @@ fun buildGraph(patterns: List<String>): Pair<Graph, Set<StartNode>> {
             edges.add(
                 Edge(
                     node,
-                    mutableSetOf(Transition(lastColor, pattern)),
+                    mutableSetOf(lastColor),
                     lastNode,
                 )
             )
@@ -86,7 +80,7 @@ fun buildGraph(patterns: List<String>): Pair<Graph, Set<StartNode>> {
         edges.add(
             Edge(
                 convergenceNode,
-                mutableSetOf(Transition(lastColor, null)),
+                mutableSetOf(lastColor),
                 lastNode
             )
         )
@@ -95,7 +89,7 @@ fun buildGraph(patterns: List<String>): Pair<Graph, Set<StartNode>> {
     for (node in nodes) {
         val children = edges
             .filter { it.from == node }
-            .map { it.transitions to it.to }
+            .map { it.colors to it.to }
             .toSet()
 //        println("children of $node: $children")
         for (other in nodes) {
@@ -104,7 +98,7 @@ fun buildGraph(patterns: List<String>): Pair<Graph, Set<StartNode>> {
             }
             val otherChildren = edges
                 .filter { it.from == other }
-                .map { it.transitions to it.to }
+                .map { it.colors to it.to }
                 .toSet()
 //            println("children of other node $other: $otherChildren")
 
@@ -140,7 +134,7 @@ fun buildGraph(patterns: List<String>): Pair<Graph, Set<StartNode>> {
 
     val collapsedEdges = edges
         .groupingBy { it.from to it.to }
-        .fold(setOf<Transition>()) { colors, edge -> colors.union(edge.transitions) }
+        .fold(setOf<Color>()) { colors, edge -> colors.union(edge.colors) }
         .entries
         .map { (key, value) -> Edge(key.first, value, key.second) }
         .toSet()
@@ -150,9 +144,8 @@ fun buildGraph(patterns: List<String>): Pair<Graph, Set<StartNode>> {
 
 fun printForGraphviz(graph: Graph, startNodes: Set<StartNode>) {
     println("digraph G {")
-    for ((from, transitions, to) in graph.edges) {
-        val label = transitions
-            .joinToString(", ") { transition -> "${transition.color} ('${transition.sourcePattern}')" }
+    for ((from, colors, to) in graph.edges) {
+        val label = colors.joinToString("")
         println("  $from -> $to [ label=\"$label\" ];")
     }
     println()
@@ -180,31 +173,25 @@ fun main() {
 
     printForGraphviz(graph, startNodes)
 
-    val numCombinations = designs
-        /*.forEach { design ->
-            val possibleStartNodes = startNodes
+    designs
+        .mapIndexed { i, design ->
+            print("$design (${i + 1}/400)...")
+            System.out.flush()
+            val startNodes = startNodes
                 .filter { node -> design.first() in node.entryColors }
                 .map { node -> node.id }
-                .toSet()
-
-            println(design)
-            for (startNode in possibleStartNodes) {
-                println("  starting from $startNode")
-                val lists = validateDesign(graph, startNode, design, listOf())
-                for (list in lists) {
-                    println("    $list")
-                }
-            }
-        }*/
-        .map { design ->
-            startNodes
-                .filter { node -> design.first() in node.entryColors }
-                .map { node -> node.id }
+            print("${startNodes.size} start nodes...")
+            System.out.flush()
+            val result = startNodes
                 .sumOf { startNode ->
-                    validateDesign(graph, startNode, design, listOf()).size
+                    print(".")
+                    System.out.flush()
+                    validateDesign(graph, startNode, design)
                 }
+            println("done")
+            System.out.flush()
+            result
         }
-        .onEach(::println)
         .sum()
         .also { println() }
         .also(::println)
