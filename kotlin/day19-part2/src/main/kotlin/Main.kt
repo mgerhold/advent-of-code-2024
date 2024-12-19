@@ -15,32 +15,37 @@ typealias Design = String
 
 fun validateDesign(
     graph: Graph,
-    startNode: Node,
+    childrenMapping: Map<Node, List<Edge>>,
+    startNodes: Map<Node, ULong>,
     design: Design,
-): Int {
+): ULong {
+    println("looking at nodes: $startNodes")
     if (design.length == 1) {
-        if (startNode == 0UL) {
-            return 1
+        return startNodes
+            .entries
+            .filter { (key, _) -> key == 0UL }
+            .sumOf { (_, value) -> value }
+    }
+
+    val nextStartNodes = startNodes
+        .flatMap { (startNode, count) ->
+            childrenMapping[startNode]!!
+                .filter { edge -> design[1] in edge.colors }
+                .map { edge -> edge.to to count }
         }
-        return 0
+        .groupingBy { (node, count) -> node }
+        .fold(0UL) { sum, element -> sum + element.second }
+
+    if (nextStartNodes.isEmpty()) {
+        return 0UL
     }
 
-    val nextEdges = graph
-        .edges
-        .filter { edge -> edge.from == startNode }
-        .filter { edge -> design[1] in edge.colors }
-
-    if (nextEdges.isEmpty()) {
-        return 0
-    }
-
-    var sum = 0
-    val nextDesign = design.substring(1)
-    for (nextEdge in nextEdges) {
-        sum += validateDesign(graph, nextEdge.to, nextDesign)
-    }
-
-    return sum
+    return validateDesign(
+        graph,
+        childrenMapping,
+        nextStartNodes,
+        design.substring(1)
+    )
 }
 
 typealias Color = Char
@@ -173,22 +178,29 @@ fun main() {
 
     printForGraphviz(graph, startNodes)
 
+    val nodes = graph
+        .edges
+        .map { it.from }
+
+    val childrenMapping = nodes
+        .associateWith { node ->
+            graph
+                .edges
+                .filter { it.from == node }
+        }
+
     designs
         .mapIndexed { i, design ->
             print("$design (${i + 1}/400)...")
             System.out.flush()
             val startNodes = startNodes
                 .filter { node -> design.first() in node.entryColors }
-                .map { node -> node.id }
+                .map { node -> node.id to 1UL }
+                .toMap()
             print("${startNodes.size} start nodes...")
             System.out.flush()
-            val result = startNodes
-                .sumOf { startNode ->
-                    print(".")
-                    System.out.flush()
-                    validateDesign(graph, startNode, design)
-                }
-            println("done")
+            val result = validateDesign(graph, childrenMapping, startNodes, design)
+            println("done => $result")
             System.out.flush()
             result
         }
