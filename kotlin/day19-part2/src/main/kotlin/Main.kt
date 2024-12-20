@@ -2,6 +2,7 @@ package org.example
 
 import kotlin.io.path.Path
 import kotlin.io.path.readText
+import kotlin.time.measureTimedValue
 
 typealias Node = ULong
 
@@ -19,7 +20,6 @@ fun validateDesign(
     startNodes: Map<Node, ULong>,
     design: Design,
 ): ULong {
-    println("looking at nodes: $startNodes")
     if (design.length == 1) {
         return startNodes
             .entries
@@ -189,22 +189,14 @@ fun main() {
                 .filter { it.from == node }
         }
 
-    designs
-        .mapIndexed { i, design ->
-            print("$design (${i + 1}/400)...")
-            System.out.flush()
-            val startNodes = startNodes
-                .filter { node -> design.first() in node.entryColors }
-                .map { node -> node.id to 1UL }
-                .toMap()
-            print("${startNodes.size} start nodes...")
-            System.out.flush()
-            val result = validateDesign(graph, childrenMapping, startNodes, design)
-            println("done => $result")
-            System.out.flush()
-            result
-        }
-        .sum()
-        .also { println() }
-        .also(::println)
+    measureTimedValue {
+        designs
+            .mapIndexed { i, design ->
+                val matchingNodes = startNodes
+                    .filter { node -> design.first() in node.entryColors }
+                    .associate { node -> node.id to 1UL }
+                validateDesign(graph, childrenMapping, matchingNodes, design)
+            }
+            .sum()
+    }.also(::println)
 }
