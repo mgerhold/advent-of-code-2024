@@ -3,8 +3,12 @@ package org.example
 import java.util.PriorityQueue
 import kotlin.io.path.Path
 import kotlin.io.path.readLines
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.time.measureTimedValue
+
+const val MAX_CHEAT_DISTANCE = 20
 
 enum class TileType(val char: Char) {
     WALL('#'),
@@ -15,6 +19,7 @@ enum class TileType(val char: Char) {
 
 data class Vec2(val x: Int, val y: Int) {
     operator fun plus(other: Vec2) = Vec2(x + other.x, y + other.y)
+    operator fun minus(other: Vec2) = Vec2(x - other.x, y - other.y)
     operator fun times(scalar: Int) = Vec2(x * scalar, y * scalar)
 }
 
@@ -49,13 +54,12 @@ fun findEndPosition(grid: Grid) = findTileByType(grid, TileType.END)
 fun findNeighbors(
     grid: Grid,
     position: Vec2,
-    acceptedTileTypes: Array<TileType>,
 ) = arrayOf(
     Vec2(1, 0), Vec2(-1, 0), Vec2(0, 1), Vec2(0, -1)
 ).map { offset -> position + offset }
     .filter { it.x in grid.first().indices && it.y in grid.indices }
     .map { grid[it.y][it.x] }
-    .filter { it.type in acceptedTileTypes }
+    .filter { it.type != TileType.WALL }
 
 fun reconstructPath(grid: Grid, endTilePosition: Vec2): List<Tile> {
     val endTile = grid[endTilePosition.y][endTilePosition.x]
@@ -74,7 +78,6 @@ fun dijkstra(
     grid: Grid,
     startPosition: Vec2,
     maxCost: Long,
-    ignoreWalls: Boolean,
 ): Set<Tile> {
     val visited = mutableSetOf<Tile>()
     val toVisit = PriorityQueue<Tile>(compareBy { it.cost })
@@ -91,10 +94,6 @@ fun dijkstra(
         val neighbors = findNeighbors(
             grid,
             tile.position,
-            acceptedTileTypes = when (ignoreWalls) {
-                true -> TileType.entries.toTypedArray()
-                false -> TileType.entries.filter { it != TileType.WALL }.toTypedArray()
-            }
         )
         val tentativeCost = tile.cost + 1L
         for (neighbor in neighbors) {
@@ -143,48 +142,43 @@ fun main() {
     val startTilePosition = findStartPosition(grid)
     val endTilePosition = findEndPosition(grid)
 
-    dijkstra(grid, startTilePosition, Long.MAX_VALUE, ignoreWalls = false)
+    dijkstra(grid, startTilePosition, Long.MAX_VALUE)
     visualize(grid, endTilePosition)
     println()
 
     val path = reconstructPath(grid, endTilePosition).map { it.position }
 
-    val resetGrid = {
-        grid
-            .forEach { row ->
-                row
-                    .forEach { tile ->
-                        tile.cost = Long.MAX_VALUE
-                    }
-            }
-    }
+    val pathMapping = path
+        .withIndex()
+        .associate { (i, position) -> position to i }
 
-    path
-        .flatMapIndexed { i, position ->
-            println("Dijkstra ${i + 1} of ${path.size}...")
-            System.out.flush()
-            resetGrid()
-
-            val visited = dijkstra(
-                grid,
-                position,
-                min(20L, (path.size - i - 1).toLong()),
-                ignoreWalls = true
-            )
-            visited
+    repeat(30) {
+        measureTimedValue {
+            path
                 .asSequence()
-                .filter { tile -> tile.type != TileType.WALL }
-                .map { tile ->
-                    tile to path.indexOf(tile.position).toLong() - (i + tile.cost)
+                .flatMapIndexed { i, position ->
+                    val reachableTiles =
+                        (max(0, position.y - MAX_CHEAT_DISTANCE)..min(grid.size - 1, position.y + MAX_CHEAT_DISTANCE))
+                            .asSequence()
+                            .flatMap { y ->
+                                val maxXOffset = MAX_CHEAT_DISTANCE - abs(y - position.y)
+                                (max(0, position.x - maxXOffset)..min(grid.first().size - 1, position.x + maxXOffset))
+                                    .asSequence()
+                                    .map { x -> Vec2(x, y) }
+                            }
+                            .filter { grid[it.y][it.x].type != TileType.WALL }
+
+                    reachableTiles
+                        .filter { pathMapping[it]!! > i }
+                        .map { otherPosition ->
+                            otherPosition to abs(otherPosition.x - position.x) + abs(otherPosition.y - position.y)
+                        }
+                        .map { (otherPosition, manhattanDistance) ->
+                            pathMapping[otherPosition]!! - i - manhattanDistance
+                        }
+                        .filter { it >= 100 }
                 }
-                .filter { (tile, saving) -> saving > 0L }
-        }
-        .groupingBy { (tile, saving) -> saving }
-        .eachCount()
-        .entries
-        .filter { (saving, count) -> saving >= 100 }
-        .sortedBy { (saving, count) -> saving }
-        .onEach { (saving, count) -> println("There are $count cheats that save $saving picoseconds.") }
-        .sumOf { (saving, count) -> count }
-        .also(::println)
+                .count()
+        }.also(::println)
+    }
 }
