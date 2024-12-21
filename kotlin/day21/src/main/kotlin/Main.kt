@@ -1,5 +1,7 @@
 package org.example
 
+import kotlin.io.path.Path
+import kotlin.io.path.readLines
 import kotlin.math.abs
 
 data class Vec2(val x: Int, val y: Int) {
@@ -26,10 +28,13 @@ enum class NumpadKey(val position: Vec2, val char: Char) {
     KEY_1(Vec2(0, 2), '1'),
     KEY_2(Vec2(1, 2), '2'),
     KEY_3(Vec2(2, 2), '3'),
-
-    // Gap left of Key 0.
+    KEY_FORBIDDEN(Vec2(0, 3), ' '),
     KEY_0(Vec2(1, 3), '0'),
-    KEY_A(Vec2(2, 3), 'A'),
+    KEY_A(Vec2(2, 3), 'A');
+
+    override fun toString(): String {
+        return char.toString()
+    }
 }
 
 enum class DirectionalKey(val position: Vec2, val char: Char, val direction: Vec2) {
@@ -38,11 +43,16 @@ enum class DirectionalKey(val position: Vec2, val char: Char, val direction: Vec
        +---+---+---+
        | < | v | > |
        +---+---+---+ */
+    FORBIDDEN(Vec2(0, 0), ' ', Vec2(0, 0)),
     UP(Vec2(1, 0), '^', Vec2(0, -1)),
     A(Vec2(2, 0), 'A', Vec2(0, 0)),
     LEFT(Vec2(0, 1), '<', Vec2(-1, 0)),
     DOWN(Vec2(1, 1), 'v', Vec2(0, 1)),
-    RIGHT(Vec2(2, 1), '>', Vec2(1, 0)),
+    RIGHT(Vec2(2, 1), '>', Vec2(1, 0));
+
+    override fun toString(): String {
+        return char.toString()
+    }
 }
 
 fun toNumpadSequence(string: String) = string
@@ -50,75 +60,129 @@ fun toNumpadSequence(string: String) = string
         NumpadKey.entries.first { key -> key.char == char }
     }
 
-fun numpadToDirectional(sequence: List<NumpadKey>): List<DirectionalKey> {
-    val result = mutableListOf<DirectionalKey>()
-    var lastKey = NumpadKey.KEY_A
-    var lastDirection: DirectionalKey? = null
-    for (targetKey in sequence) {
-        val delta = targetKey.position - lastKey.position
-        val movingUp = delta.y < 0
-        val movingLeft = delta.x < 0
-
-        val moveVertically = {
-            (0 until abs(delta.y))
-                .forEach { _ ->
-                    result.add(if (movingUp) DirectionalKey.UP else DirectionalKey.DOWN)
-                }
+fun isValidNumpadSequence(sequence: List<DirectionalKey>): Boolean {
+    var current = NumpadKey.KEY_A
+    for (directionKey in sequence) {
+        check(directionKey != DirectionalKey.FORBIDDEN)
+        current = NumpadKey.entries.first { it.position == current.position + directionKey.direction }
+        if (current == NumpadKey.KEY_FORBIDDEN) {
+            return false
         }
-        val moveHorizontally = {
-            (0 until abs(delta.x))
-                .forEach { _ ->
-                    result.add(if (movingLeft) DirectionalKey.LEFT else DirectionalKey.RIGHT)
-                }
-        }
-
-        if (movingUp) {
-            moveVertically()
-            moveHorizontally()
-        } else {
-            moveHorizontally()
-            moveVertically()
-        }
-
-        lastKey = targetKey
-        result.add(DirectionalKey.A)
     }
-    return result
+    return true
 }
 
-fun directionalToDirectional(sequence: List<DirectionalKey>): List<DirectionalKey> {
-    val result = mutableListOf<DirectionalKey>()
-    var lastKey = DirectionalKey.A
+fun isValiDirectionalSequence(sequence: List<DirectionalKey>): Boolean {
+    var current = DirectionalKey.A
+    for (directionKey in sequence) {
+        check(directionKey != DirectionalKey.FORBIDDEN)
+        current = DirectionalKey.entries.first { it.position == current.position + directionKey.direction }
+        if (current == DirectionalKey.FORBIDDEN) {
+            return false
+        }
+    }
+    return true
+}
+
+fun numpadToDirectional(sequence: List<NumpadKey>): Sequence<List<DirectionalKey>> {
+    val blocks = mutableListOf<List<DirectionalKey>>()
+    var lastKey = NumpadKey.KEY_A
     for (targetKey in sequence) {
+        val subSequence = mutableListOf<DirectionalKey>()
         val delta = targetKey.position - lastKey.position
-        val movingUp = delta.y < 0
-        val movingLeft = delta.x < 0
 
-        val moveVertically = {
-            (0 until abs(delta.y))
-                .forEach { _ ->
-                    result.add(if (movingUp) DirectionalKey.UP else DirectionalKey.DOWN)
-                }
-        }
-        val moveHorizontally = {
-            (0 until abs(delta.x))
-                .forEach { _ ->
-                    result.add(if (movingLeft) DirectionalKey.LEFT else DirectionalKey.RIGHT)
-                }
-        }
+        (0 until abs(delta.y))
+            .forEach { _ ->
+                subSequence.add(if (delta.y < 0) DirectionalKey.UP else DirectionalKey.DOWN)
+            }
 
-        if (movingUp) {
-            moveHorizontally()
-            moveVertically()
-        } else {
-            moveVertically()
-            moveHorizontally()
-        }
+        (0 until abs(delta.x))
+            .forEach { _ ->
+                subSequence.add(if (delta.x < 0) DirectionalKey.LEFT else DirectionalKey.RIGHT)
+            }
 
         lastKey = targetKey
-        result.add(DirectionalKey.A)
+        subSequence.add(DirectionalKey.A)
+        blocks.add(subSequence)
     }
-    return result
+
+    var result: Sequence<List<DirectionalKey>>? = null
+    for (block in blocks) {
+        val permutations = getPermutations(block.subList(0, block.size - 1)).map { it + block.last() }
+        if (result == null) {
+            result = permutations
+        } else {
+            result = result
+                .flatMap { a ->
+                    permutations
+                        .map { b ->
+                            a + b
+                        }
+                }
+        }
+    }
+    check(result != null)
+    return result.filter(::isValidNumpadSequence)
+}
+
+fun getPermutations(sequence: List<DirectionalKey>): Sequence<List<DirectionalKey>> {
+    if (sequence.size <= 1) {
+        return sequenceOf(sequence)
+    }
+
+    val subPermutations = getPermutations(sequence.subList(0, sequence.size - 1))
+    return (0..subPermutations.first().size)
+        .asSequence()
+        .flatMap { i ->
+            subPermutations
+                .map {
+                    val permutation = it.toMutableList()
+                    permutation.add(i, sequence.last())
+                    permutation
+                }
+        }
+        .distinct()
+}
+
+fun directionalToDirectional(sequence: List<DirectionalKey>): Sequence<List<DirectionalKey>> {
+    val blocks = mutableListOf<List<DirectionalKey>>()
+    var lastKey = DirectionalKey.A
+    for (targetKey in sequence) {
+        val subSequence = mutableListOf<DirectionalKey>()
+        val delta = targetKey.position - lastKey.position
+
+        (0 until abs(delta.y))
+            .forEach { _ ->
+                subSequence.add(if (delta.y < 0) DirectionalKey.UP else DirectionalKey.DOWN)
+            }
+
+        (0 until abs(delta.x))
+            .forEach { _ ->
+                subSequence.add(if (delta.x < 0) DirectionalKey.LEFT else DirectionalKey.RIGHT)
+            }
+
+        lastKey = targetKey
+        subSequence.add(DirectionalKey.A)
+        blocks.add(subSequence)
+    }
+
+    var result: Sequence<List<DirectionalKey>>? = null
+    for (block in blocks) {
+        val permutations = getPermutations(block.subList(0, block.size - 1)).map { it + block.last() }
+        if (result == null) {
+            result = permutations
+        } else {
+            result = result
+                .flatMap { a ->
+                    permutations
+                        .map { b ->
+                            a + b
+                        }
+                }
+        }
+    }
+    check(result != null)
+    return result.filter(::isValiDirectionalSequence)
 }
 
 fun reverseDirectionalToDirectional(sequence: List<DirectionalKey>): List<DirectionalKey> {
@@ -161,54 +225,28 @@ fun reverseNumericalToDirectional(sequence: List<DirectionalKey>): List<NumpadKe
     return result
 }
 
+fun findShortestLength(sequences: Sequence<List<DirectionalKey>>, depth: Int): Int {
+    if (depth == 0) {
+        return sequences.first().size
+    }
+    return sequences
+        .minOf { sequence ->
+            findShortestLength(directionalToDirectional(sequence), depth - 1)
+        }
+}
+
 fun main() {
-    /*Path("input.txt")
+    val sequences = Path("input.txt")
         .readLines()
-        .asSequence()
-        .map { it.substring(0, 3).toInt() to toNumpadSequence(it) }
-        .onEach { (_, sequence) ->
-            sequence
-                .map { key -> key.char }
-                .joinToString("")
-                .also(::println)
-        }
-        .map { (numericalPart, sequence) -> numericalPart to numpadToDirectional(sequence) }
-        .onEach { (_, sequence) ->
-            sequence
-                .map { key -> key.char }
-                .joinToString("")
-                .also(::println)
-            val reversed = reverseNumericalToDirectional(sequence)
-            reversed
-                .map { key -> key.char }
-                .joinToString("")
-                .also { println("  reversed: $it") }
-        }
-        .map { (numericalPart, sequence) -> numericalPart to directionalToDirectional(sequence) }
-        .onEach { (_, sequence) ->
-            sequence
-                .map { key -> key.char }
-                .joinToString("")
-                .also(::println)
-            val reversed = reverseDirectionalToDirectional(sequence)
-            reversed
-                .map { key -> key.char }
-                .joinToString("")
-                .also { println("  reversed: $it") }
-        }
-        .map { (numericalPart, sequence) -> numericalPart to directionalToDirectional(sequence) }
-        .onEach { (_, sequence) ->
-            sequence
-                .map { key -> key.char }
-                .joinToString("")
-                .also(::println)
-            val reversed = reverseDirectionalToDirectional(sequence)
-            reversed
-                .map { key -> key.char }
-                .joinToString("")
-                .also { println("  reversed: $it") }
-        }
-        .forEach { (numericalPart, sequence) ->
-            println("${sequence.size} * $numericalPart = ${sequence.size * numericalPart}")
-        }*/
+        .filter { !it.startsWith("//") }
+        .map { it.substring(0, it.length - 1).toInt() to toNumpadSequence(it) }
+
+    var sum = 0
+    for ((numericValue, sequence) in sequences) {
+        val directionSequences1 = numpadToDirectional(sequence)
+        val shortestLength = findShortestLength(directionSequences1, 2)
+        println("$shortestLength * $numericValue = ${shortestLength * numericValue}")
+        sum += shortestLength * numericValue
+    }
+    println("sum: $sum")
 }
